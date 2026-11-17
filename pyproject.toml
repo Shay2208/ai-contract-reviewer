@@ -1,0 +1,62 @@
+[project]
+name = "feishu-contract-reviewer"
+version = "1.0.0"
+description = "飞书 AI 合同预审机器人：接入飞书审批事件，自动下载合同附件，用规则 + 大模型找出对我方不利的条款并回写审批评论"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "黄少杰" }]
+keywords = ["feishu", "lark", "contract", "llm", "review"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pypdf>=5.0",
+    "python-docx>=1.1",
+    "certifi",
+]
+
+[project.optional-dependencies]
+# 扫描件（图片型 PDF）OCR 才需要
+ocr = [
+    "pymupdf",
+    "rapidocr_onnxruntime",
+]
+# 接收飞书事件（长连接）才需要
+events = [
+    "lark-oapi>=1.7",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+exclude = [".venv", "venv", "vendor", "out"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle、F: pyflakes、I: isort、UP: pyupgrade、B: bugbear
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501（行超长）交给 line-length=120 的粗略约束，但不作为硬性门禁：
+# 中文注释与文档 URL 按字符数统计时容易超列，强行折行反而更难读。
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 包内 __init__ 用「re-export」方式聚合对外 API，未直接使用的导入属预期
+"src/contract/__init__.py" = ["F401"]
+"src/contract/rules/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# 项目当前用 unittest 编写，pytest 可直接收集；unittest discover 同样可用
+addopts = "-ra"

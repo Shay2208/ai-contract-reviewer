@@ -1,0 +1,19 @@
+# --- 运行时依赖（代码中真实 import 的）---
+
+# PDF 文本抽取
+pypdf>=5.0
+
+# Word（.docx）解析与审查报告生成
+python-docx>=1.1
+
+# LLM 请求使用的 SSL 根证书
+certifi
+
+# --- 可选依赖 ---
+
+# 扫描件 OCR：只有需要识别「图片型 PDF」时才安装，纯文本 PDF 不需要
+# pymupdf
+# rapidocr_onnxruntime
+
+# 接收飞书事件（长连接）才需要
+# lark-oapi>=1.7
