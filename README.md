@@ -6,7 +6,7 @@
 ![python](https://img.shields.io/static/v1?label=python&message=3.10%2B&color=3776AB)
 ![license](https://img.shields.io/static/v1?label=license&message=MIT&color=green)
 
-> 约 4,500 行 Python｜93 项单元测试｜31 项检查清单 + 14 条确定性规则｜单份合同 31–78 秒｜已在一家制造业企业真实生产使用
+> 约 6,800 行 Python｜93 项单元测试｜31 项检查清单 + 14 条确定性规则｜单份合同 31–78 秒｜已在一家制造业企业真实生产使用
 
 ## 它解决什么问题
 
