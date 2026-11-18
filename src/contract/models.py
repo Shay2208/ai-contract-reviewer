@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .checklist import HIGH, LEVEL_LABEL, LOW, MEDIUM, CheckResult, missing_items
+from .quality import is_text_quality
 
 # 排序用：高 → 中 → 低
 LEVEL_ORDER = {HIGH: 0, MEDIUM: 1, LOW: 2}
@@ -42,6 +43,14 @@ class Finding:
     def level_label(self) -> str:
         return LEVEL_LABEL.get(self.level, self.level)
 
+    @property
+    def text_quality(self) -> bool:
+        """原件质量问题（OCR 乱码、条款编号混乱）：真问题，但不是合同风险。
+
+        它不参与风险定级与排序，否则会把「该不该盖章」的判断挤出视野。
+        """
+        return is_text_quality(self)
+
     def to_dict(self) -> dict:
         return {
             "level": self.level,
@@ -55,6 +64,7 @@ class Finding:
             "source": self.source,
             "missing": self.missing,
             "rule": self.rule,
+            "text_quality": self.text_quality,
         }
 
 
@@ -75,28 +85,38 @@ class ReviewResult:
     notes: list[str] = field(default_factory=list)  # 不参与定级的提示（如"未约定事项依主协议执行"）
 
     @property
+    def risk_findings(self) -> list[Finding]:
+        """只有真正的合同风险；原件质量问题被排除在定级之外。"""
+        return [f for f in self.findings if not f.text_quality]
+
+    @property
+    def quality_findings(self) -> list[Finding]:
+        """原件质量问题（OCR 乱码、编号混乱等），单独展示、不参与定级。"""
+        return [f for f in self.findings if f.text_quality]
+
+    @property
     def substantive(self) -> list[Finding]:
-        """有原文依据的风险（不含"整条缺失"那类）。"""
-        return [f for f in self.findings if not f.missing and (f.quote or "").strip()]
+        """有原文依据的风险（不含"整条缺失"那类，也不含原件质量问题）。"""
+        return [f for f in self.risk_findings if not f.missing and (f.quote or "").strip()]
 
     @property
     def high(self) -> list[Finding]:
-        return [f for f in self.findings if f.level == HIGH]
+        return [f for f in self.risk_findings if f.level == HIGH]
 
     @property
     def medium(self) -> list[Finding]:
-        return [f for f in self.findings if f.level == MEDIUM]
+        return [f for f in self.risk_findings if f.level == MEDIUM]
 
     @property
     def low(self) -> list[Finding]:
-        return [f for f in self.findings if f.level == LOW]
+        return [f for f in self.risk_findings if f.level == LOW]
 
     @property
     def overall(self) -> str:
         # 综合风险只由「有原文依据的风险」决定：
         # 「缺少某条款」是清单体检的结果，不同合同类型（尤其补充协议）缺失是正常的，
         # 让它参与定级会把每份合同都算成"高"。
-        basis = self.substantive or self.findings
+        basis = self.substantive or self.risk_findings
         highs = [f for f in basis if f.level == HIGH]
         mids = [f for f in basis if f.level == MEDIUM]
         if len(highs) >= 2:

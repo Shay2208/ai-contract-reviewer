@@ -117,12 +117,13 @@ def _merge(base: list[Finding], extra: list[Finding], text: str, our_side: str =
     return merged
 
 
-def _sort_key(f: Finding) -> tuple[int, int, float]:
-    """排序键：先按风险等级，同级内有原文引用的具体条款排在「合同未约定 XX」之前。
+def _sort_key(f: Finding) -> tuple[int, int, int, float]:
+    """排序键：原件质量问题沉底，再按风险等级，同级内优先有原文引用的具体条款。
 
-    行政看评论时最想先看到「哪一条写了什么坑」，缺失项信息量低，压后面。
+    行政看评论时最想先看到「哪一条写了什么坑」；「合同未约定 XX」信息量低，
+    「OCR 乱码/条款编号混乱」根本不属于合同风险，都压后面。
     """
-    return (LEVEL_ORDER.get(f.level, 3), 0 if f.quote else 1, -f.confidence)
+    return (1 if f.text_quality else 0, LEVEL_ORDER.get(f.level, 3), 0 if f.quote else 1, -f.confidence)
 
 
 def _sort_findings(findings: list[Finding]) -> list[Finding]:
@@ -217,6 +218,7 @@ def review_contract(path: str | Path, settings, force_rules: bool = False) -> Re
                 confidence=f.get("confidence", 0.7),
                 source="llm",
                 missing=bool(f.get("missing")),
+                rule=str(f.get("rule") or "").upper(),
             )
             for f in llm_result.findings
         ]

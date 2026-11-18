@@ -130,14 +130,23 @@ def cmd_preview_comment(args) -> int:
         )
         record = store.get(review_id) or {}
         name = args.approval_name or settings.contract_preview_approval_name
-        text = approval_mod.build_comment_from_record(record, {"approval_name": name})
+        text = approval_mod.build_comment_from_record(
+            record,
+            {"approval_name": name},
+            full=settings.contract_comment_full,
+        )
         print("=" * 72)
         print("审批评论样稿（一字不差就是审批人看到的）")
         print("=" * 72)
         print(text)
         print("=" * 72)
-        print(f"共 {len(text.splitlines())} 行；综合风险 {result.overall}"
-              f"（高 {len(result.high)} / 中 {len(result.medium)} / 低 {len(result.low)}）")
+        chunks = approval_mod.split_comment(text)
+        print(
+            f"共 {len(text.splitlines())} 行 / {len(text)} 字"
+            + (f"，会拆成 {len(chunks)} 条评论" if len(chunks) > 1 else "")
+            + f"；综合风险 {result.overall}"
+            f"（高 {len(result.high)} / 中 {len(result.medium)} / 低 {len(result.low)}）"
+        )
         print(f"模式：{result.mode}｜补充协议：{'是' if result.supplement else '否'}"
               + (f"（{result.supplement_evidence}）" if result.supplement_evidence else ""))
         if result.llm_error:

@@ -92,6 +92,7 @@ class Settings:
     # --- 审批流接管 ---
     contract_approval_codes: list[str] = field(default_factory=list)  # 要接管的审批定义 Code（用印申请）
     contract_comment_enabled: bool = True  # 审查完是否自动回写审批评论
+    contract_comment_full: bool = True  # 评论是否全量列出所有风险（false=只列前 4 条）
     contract_notify_approvers: bool = False  # 是否私聊通知审批人（默认关，避免打扰）
     contract_comment_open_id: str = ""  # 评论署名用哪个用户（飞书不支持应用署名）
     contract_preview_approval_name: str = "用印申请（合同/非合同）"  # 私聊预览时冒充的审批名
@@ -149,6 +150,7 @@ class Settings:
             contract_task_due_days=_env_int("CONTRACT_TASK_DUE_DAYS", 2),
             contract_approval_codes=_env_list("CONTRACT_APPROVAL_CODES"),
             contract_comment_enabled=_env_bool("CONTRACT_COMMENT_ENABLED", True),
+            contract_comment_full=_env_bool("CONTRACT_COMMENT_FULL", True),
             contract_notify_approvers=_env_bool("CONTRACT_NOTIFY_APPROVERS", False),
             contract_comment_open_id=_env("CONTRACT_COMMENT_OPEN_ID", ""),
             contract_preview_approval_name=_env("CONTRACT_PREVIEW_APPROVAL_NAME", "用印申请（合同/非合同）"),

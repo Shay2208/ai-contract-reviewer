@@ -8,9 +8,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from .quality import is_text_quality
+
 RISK_TEMPLATE = {"高": "red", "中高": "orange", "中": "orange", "低": "green", "—": "grey"}
 LEVEL_ICON = {"high": "🔴", "medium": "🟡", "low": "🟢"}
 LEVEL_LABEL = {"high": "高", "medium": "中", "low": "低"}
+
+
+def _risks(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """卡片只展示真正的合同风险：原件质量问题（OCR 乱码、编号混乱）不上卡。
+
+    行政扫一眼卡片就是为了决定"该不该盖章"，文件本身的毛病单列在报告末尾。
+    """
+    findings = record.get("findings") or []
+    return [f for f in findings if not is_text_quality(f)]
 
 
 def _md(content: str) -> dict[str, Any]:
@@ -36,7 +47,7 @@ def _money(value: str) -> str:
 def review_card(record: dict[str, Any]) -> dict[str, Any]:
     """一份合同的预审结果卡片：结论 + 金额/对方 + Top 风险 + 三个按钮。"""
     summary = record.get("summary") or {}
-    findings = record.get("findings") or []
+    findings = _risks(record)
     overall = record.get("overall") or "—"
     file_name = record.get("file_name") or "合同"
 
@@ -88,7 +99,7 @@ def comment_preview_card(record: dict[str, Any], comment_text: str) -> dict[str,
     """
     overall = record.get("overall") or "—"
     file_name = record.get("file_name") or "合同"
-    findings = record.get("findings") or []
+    findings = _risks(record)
     high = [f for f in findings if f.get("level") == "high"][:5]
 
     elements: list[dict[str, Any]] = [

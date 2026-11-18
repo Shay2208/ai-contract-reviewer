@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import ocr as ocr_mod
+from .quality import is_text_quality
 from .render import write_report
 from .reviewer import ReviewResult, review_contract
 from .store import ContractStore
@@ -379,8 +380,22 @@ def process_instance(
             mismatches = form_consistency(widgets, contract_text)
         except OSError:
             pass
-        comment_text = build_comment_from_record(review, instance, mismatches=mismatches)
-        comment_id, comment_error = _post_comment(api, settings, instance, instance_code, comment_text)
+        full = bool(getattr(settings, "contract_comment_full", True))
+        comment_text = build_comment_from_record(
+            review, instance, mismatches=mismatches, full=full
+        )
+        # 全量评论可能过万字，超长按行拆成多条，避免 4002 comment service add err
+        chunks = split_comment(comment_text)
+        posted: list[str] = []
+        for index, chunk in enumerate(chunks, 1):
+            cid, err = _post_comment(api, settings, instance, instance_code, chunk)
+            if err:
+                comment_error = err
+                break
+            posted.append(cid)
+            if len(chunks) > 1:
+                log.info("审批评论已写入第 %d/%d 条：instance=%s", index, len(chunks), instance_code)
+        comment_id = ",".join(posted)
         if comment_error:
             comment_text += f"\n（评论写入失败：{comment_error}）"
 
@@ -479,13 +494,23 @@ def build_comment_from_record(
     instance: dict[str, Any],
     mismatches: list[str] | None = None,
     max_items: int = 4,
+    full: bool = True,
 ) -> str:
     """审批评论：一条风险一行，格式「风险｜原文｜解释」。
 
     行政要求模型不受固定清单限制自由审查，评论里要能看到三段依据：
     风险是什么、合同原文怎么写、为什么有风险。整条缺失时写「合同未约定」。
+
+    full=True（默认）：列出全部风险，评论区就能看全，不用再点文档
+    （同事要求）。实测飞书评论正文 10000 字可以、12000 字报
+    ``4002 comment service add err``，超长由 split_comment 拆成多条。
+    full=False：只列前 max_items 条并压到 12 行以内（早期极简版）。
     """
-    findings = _as_json(record.get("findings_json"), [])
+    all_findings = _as_json(record.get("findings_json"), [])
+    # 原件质量问题（OCR 乱码、条款编号混乱）不进风险行：评论区每一行都得是
+    # "该不该盖章"的判断依据。它们单独压成一行提示。
+    quality = [f for f in all_findings if is_text_quality(f)]
+    findings = [f for f in all_findings if not is_text_quality(f)]
     questions = _as_json(record.get("questions_json"), [])
     summary = _as_json(record.get("summary_json"), {})
     high = [f for f in findings if f.get("level") == "high"]
@@ -511,6 +536,7 @@ def build_comment_from_record(
         else:
             lines.append(prefix + "；".join(shown_mm) + ("…" if len(mismatches) > 2 else ""))
     order = {"high": 0, "medium": 1, "low": 2}
+    limit = len(findings) if full else max_items
     shown = 0
 
     def rank(finding: dict[str, Any]) -> tuple[int, int]:
@@ -522,20 +548,67 @@ def build_comment_from_record(
         has_quote = 0 if str(finding.get("quote") or "").strip() else 1
         return (order.get(finding.get("level"), 9), has_quote)
 
+    # 全量模式下字数够用，原文与解释各放宽到 60 字，读起来更像人话
+    quote_limit = 60 if full else 40
+    issue_limit = 60 if full else 45
     for finding in sorted(findings, key=rank):
-        if shown >= max_items:
+        if shown >= limit:
             break
         shown += 1
         label = {"high": "高", "medium": "中", "low": "低"}.get(finding.get("level"), "")
         title = (finding.get("title") or "").strip()
-        quote = _clip(finding.get("quote"), 40)
-        issue = _clip(finding.get("issue"), 45)
+        quote = _clip(finding.get("quote"), quote_limit)
+        issue = _clip(finding.get("issue"), issue_limit)
         quote_part = f"原文「{quote}」" if quote else "原文（合同未约定）"
         lines.append(f"{shown}. [{label}] {title}｜{quote_part}｜解释：{issue or '—'}")
     if questions:
         lines.append("签约前必问：" + "；".join(_clip(q, 30) for q in questions[:2]))
+    if quality:
+        lines.append(f"原件质量：存在 {len(quality)} 处文件问题（如 {_clip(quality[0].get('title'), 20)}），建议索取清晰原件。")
     lines.append("AI 自动生成，仅供参考，最终以法务意见为准。")
-    return "\n".join(lines[:12])
+    if not full:
+        lines = lines[:12]
+    return "\n".join(lines)
+
+
+_COMMENT_MAX_CHARS = 8000  # 实测 10000 字可写入，留 2000 字余量给多字节与后续拼接
+
+
+def split_comment(text: str, max_chars: int = _COMMENT_MAX_CHARS) -> list[str]:
+    """把超长评论按行拆成多条，每条都在飞书允许的字数内。
+
+    第 1 条带完整抬头，后续每条抬头加「（续 i/n）」，审批人不会看丢是哪一份合同。
+    正常一份合同（12~20 条结论）约 2500~5000 字，通常只有 1 条。
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= max_chars:
+        return [text]
+    lines = text.split("\n")
+    header, body = lines[0], lines[1:]
+    budget = max(600, max_chars - len(header) - 20)
+    chunks: list[list[str]] = []
+    cur: list[str] = []
+    size = 0
+    for line in body:
+        add = len(line) + 1
+        if cur and size + add > budget:
+            chunks.append(cur)
+            cur, size = [], 0
+        cur.append(line)
+        size += add
+    if cur:
+        chunks.append(cur)
+    total = len(chunks)
+    if total <= 1:
+        return [text]
+    return [
+        "\n".join(
+            [f"{header}（{i}/{total}）" if i == 1 else f"{header}（续 {i}/{total}）"] + chunk
+        )
+        for i, chunk in enumerate(chunks, 1)
+    ]
 
 
 def _clip(value: Any, limit: int) -> str:

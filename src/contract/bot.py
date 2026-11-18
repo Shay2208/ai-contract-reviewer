@@ -274,7 +274,9 @@ class ContractBot:
         if chat_type == "p2p":
             # 私聊=模板评审通道：先把「审批单上会出现的评论原文」摆出来
             comment_text = approval.build_comment_from_record(
-                record, {"approval_name": self.settings.contract_preview_approval_name}
+                record,
+                {"approval_name": self.settings.contract_preview_approval_name},
+                full=self.settings.contract_comment_full,
             )
             card = cards.comment_preview_card(record, comment_text)
         else:
